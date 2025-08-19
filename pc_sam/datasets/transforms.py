@@ -9,7 +9,7 @@ from typing import Callable, Dict, List
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
-
+from typing import Dict, Any, List
 
 class Compose:
     def __init__(self, transforms: List[Callable]):
@@ -30,17 +30,14 @@ class Compose:
 
 
 class Transform:
-    def apply(self, example: dict):
+    """修复后的变换基类，支持单个样本处理"""
+    def apply(self, example: Dict[str, Any]) -> Dict[str, Any]:
+        """处理单个样本的方法，子类需重写"""
         return example
 
-    def __call__(self, examples: Dict[str, List]):
-        keys = examples.keys()
-        ret = [
-            self.apply({k: v for k, v in zip(keys, example)})
-            for example in zip(*[examples[k] for k in keys])
-        ]
-        examples.update({k: [x[k] for x in ret] for k in keys})
-        return examples
+    def __call__(self, example: Dict[str, Any]) -> Dict[str, Any]:
+        """直接传递完整样本给apply，不拆分点云"""
+        return self.apply(example)
 
 
 class ToTensor(Transform):
