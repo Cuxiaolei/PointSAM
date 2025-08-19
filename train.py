@@ -45,6 +45,7 @@ def build_dataset(cfg):
     return dataset
 
 from hydra.utils import instantiate
+from hydra.core.global_hydra import GlobalHydra  # 导入全局配置工具
 from torchvision.transforms import Compose
 from pc_sam.datasets.fuse_data import CustomNPDDataset  # 根据实际路径调整导入
 
@@ -52,7 +53,6 @@ from pc_sam.datasets.fuse_data import CustomNPDDataset  # 根据实际路径调�
 def build_datasets(cfg):
     # 获取全局配置（包含num_samples等根目录参数）
     global_cfg = GlobalHydra.instance().config
-#
     if cfg.dataset.name == "CustomNPY":
         # 解析transforms
         transforms = None
