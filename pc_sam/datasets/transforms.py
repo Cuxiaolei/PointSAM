@@ -56,7 +56,12 @@ class ToTensor(Transform):
 
 def normalize_points(points: np.ndarray):
     """Normalize the point cloud into a unit sphere."""
-    assert points.ndim == 2 and points.shape[1] == 3, points.shape
+    # 强化输入检查，增加详细报错信息
+    if points.ndim != 2:
+        raise ValueError(f"点云维度错误：预期2维，实际{points.ndim}维，形状{points.shape}")
+    if points.shape[1] != 3:
+        raise ValueError(f"点云通道错误：预期3通道，实际{points.shape[1]}通道，形状{points.shape}")
+
     centroid = np.mean(points, axis=0)
     points = points - centroid
     norm = np.max(np.linalg.norm(points, ord=2, axis=1))
