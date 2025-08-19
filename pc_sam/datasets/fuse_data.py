@@ -254,7 +254,7 @@ class CustomNPDDataset(Dataset):
         self.num_points = num_points
 
         # 读取split对应的txt文件（train/val/test.txt）
-        split_file = os.path.join(data_root, f"{split}.txt")
+        split_file = os.path.join(data_root, f"{split}_scenes.txt")
         with open(split_file, "r") as f:
             self.scene_names = [line.strip() for line in f.readlines()]
 
@@ -298,12 +298,3 @@ class CustomNPDDataset(Dataset):
             data = self.transform(data)
         return data
 
-
-if __name__ == "__main__":
-    dataset = FuseDataset(
-        data_path="yuchen0187/pcmask",
-        local_dir="/home/ubuntu/projects/yuchen/fused_data",
-        token="YOUR_HF_TOKEN",
-    )
-    data = dataset[0]
-    visualize_mask("./test.ply", data["points"], data["seg_labels"])

@@ -1,15 +1,16 @@
 defaults:
-  - model: default
-  - dataset@train_dataset: custom_train
-  - dataset@val_dataset: custom_val
+  - model: base
+  - dataset@train_dataset: mixture
+  - dataset@val_dataset: partnet_val
   - loss: default
+  - _self_
 
 # Global variables
 num_samples: 10000
 
 # For 24GB GPU
 train_dataloader:
-  batch_size: 2
+  batch_size: 4
   num_workers: 8
   shuffle: True
   drop_last: True
@@ -22,23 +23,23 @@ val_dataloader:
   drop_last: False
 
 lr: 3e-4
-weight_decay: 0.1
+weight_decay: 1e-4
 max_grad_value: 1.0
 gradient_accumulation_steps: 1
 save_freq: 5
 
 scheduler:
   _target_: pc_sam.optim.WarmupMultiStepLR
-  milestones: [400000, 500000]
-  warmup_iters: 3000
+  milestones: [40000, 50000]
+  warmup_iters: 2000
   warmup_factor: 0.001
   gamma: 0.1
 
-pretrained_ckpt_path: ./pretrained/uni3d-l/model.pt
+pretrained_ckpt_path: ./pretrained/uni3d-b/model.pt
 max_epochs: 100
 max_steps: 5000000
 
 # Logging
-run_name: default_partnet+scannet_block
+run_name: base_mixture
 project_dir: "./logs/${run_name}"
 log_with: wandb

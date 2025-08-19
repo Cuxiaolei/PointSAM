@@ -112,22 +112,22 @@ std::vector<at::Tensor> mlp_backward(
   bool requires_grad = inputs[0].requires_grad();
 
   std::vector<int> output_features;
-  for (int i = 0; i < num_layers; i++) {
+  for (size_t i = 0; i < num_layers; i++) {
     output_features.push_back(inputs[i + 1].size(0));
   }
   // create outputs, length of inputs
   std::vector<at::Tensor> outputs;
-  for (int i = 0; i < inputs.size(); i++) {
+  for (size_t i = 0; i < inputs.size(); i++) {
     outputs.push_back(at::empty(inputs[i].sizes(), inputs[i].type()));  // clone for testing now
   }
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(inputs[0].type(), "mlp_backward", [&] {
     std::vector<scalar_t*> w_ptr;
-    for (int i = 0; i < num_layers; i++) {
+    for (size_t i = 0; i < num_layers; i++) {
       w_ptr.push_back(inputs[i + 1].data_ptr<scalar_t>());
     }
     std::vector<scalar_t*> outputs_ptr;
-    for (int i = 0; i < inputs.size(); i++) {
+    for (size_t i = 0; i < inputs.size(); i++) {
       outputs_ptr.push_back(outputs[i].data_ptr<scalar_t>());
     }
 
@@ -135,9 +135,9 @@ std::vector<at::Tensor> mlp_backward(
         get_mlp_bp_workspace_in_bytes<scalar_t>(batch_size, num_layers, output_features.data());
 
     // auto work_space = at::empty({work_size*4}, at::kByte);
-    auto work_space = at::empty({static_cast<long>(work_size / sizeof(scalar_t))}, inputs[0].type());
+    auto work_space = at::empty({static_cast<long>(work_size / sizeof(scalar_t))}, inputs[0].options());
 
-    auto result = mlp_bp<scalar_t>(
+    mlp_bp<scalar_t>(
         inputs[0].data_ptr<scalar_t>(),
         fprop_outputs[0].data_ptr<scalar_t>(),
         input_features,

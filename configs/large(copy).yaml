@@ -1,7 +1,7 @@
 defaults:
   - model: default
-  - dataset@train_dataset: custom_train
-  - dataset@val_dataset: custom_val
+  - dataset@train_dataset: partnet 
+  - dataset@val_dataset: partnet_val
   - loss: default
 
 # Global variables
