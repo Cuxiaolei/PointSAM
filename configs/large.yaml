@@ -34,7 +34,7 @@ scheduler:
   warmup_factor: 0.001
   gamma: 0.1
 
-pretrained_ckpt_path: ./pretrained/uni3d-l/model.pt
+pretrained_ckpt_path: ""
 max_epochs: 100
 max_steps: 5000000
 
