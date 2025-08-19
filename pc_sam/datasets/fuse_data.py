@@ -257,10 +257,13 @@ class CustomNPDDataset(Dataset):
         split_file = os.path.join(data_root, f"{split}_scenes.txt")
         # 调试：检查split文件是否存在
         assert os.path.exists(split_file), f"split文件不存在：{split_file}"
-        print(f"成功加载split文件：{split_file}，包含{len(self.scene_names)}个场景")
 
+        # 先读取scene_names，再打印（修复顺序）
         with open(split_file, "r") as f:
-            self.scene_names = [line.strip() for line in f.readlines()]
+            self.scene_names = [line.strip() for line in f.readlines()]  # 先定义
+
+        # 再打印（此时self.scene_names已存在）
+        print(f"成功加载split文件：{split_file}，包含{len(self.scene_names)}个场景")
 
         # 检查场景文件是否存在，并打印基本信息
         print(f"开始检查{split}集场景文件（共{len(self.scene_names)}个）：")
@@ -345,4 +348,4 @@ class CustomNPDDataset(Dataset):
         assert len(data["coords"]) == self.num_points, \
             f"采样后点数量错误：预期{self.num_points}，实际{len(data['coords'])}"
         print(f"数据加载完成（第{idx}个场景）")
-        return data
+        return dataZ
