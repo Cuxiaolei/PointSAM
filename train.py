@@ -56,13 +56,14 @@ def build_datasets(cfg):
         if hasattr(cfg.dataset, "transforms") and cfg.dataset.transforms is not None:
             transform_list = [instantiate(t) for t in cfg.dataset.transforms]
             transforms = Compose(transform_list)
-
+        random_sample_transform = cfg.transforms[2]
+        num_samples = random_sample_transform.num_samples
         return CustomNPDDataset(
             data_root=cfg.dataset.path,
             split=cfg.dataset.split,
             transform=transforms,
             # 从全局配置获取num_samples（关键修改）
-            num_points=cfg.transforms[num_samples]
+            num_points=num_samples
         )
     else:
         return build_dataset(cfg)
