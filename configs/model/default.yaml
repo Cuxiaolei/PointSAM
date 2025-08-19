@@ -3,7 +3,7 @@ pc_encoder:
   _target_: pc_sam.model.pc_encoder.PointCloudEncoder
   patch_embed:
     _target_: pc_sam.model.pc_encoder.PatchEmbed
-    in_channels: 6
+    in_channels: 9
     out_channels: 512  # compatible with unit3d-l
     num_patches: 1024
     patch_size: 256
