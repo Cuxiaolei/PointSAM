@@ -296,4 +296,7 @@ class CustomNPDDataset(Dataset):
         # 应用变换
         if self.transform is not None:
             data = self.transform(data)
+        # 调试：验证采样后点数量是否正确
+        assert len(data["coords"]) == self.num_points, \
+            f"采样后点数量错误：预期{self.num_points}，实际{len(data['coords'])}"
         return data
