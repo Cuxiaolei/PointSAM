@@ -51,6 +51,9 @@ from pc_sam.datasets.fuse_data import CustomNPDDataset  # 根据实际路径调�
 
 def build_datasets(cfg):
     if cfg.dataset.name == "CustomNPY":
+        print("transforms 配置列表：")
+        for i, t in enumerate(cfg.transforms):
+            print(f"第 {i} 个变换的配置类型：{type(t)}，内容：{t}")
         # 解析transforms
         transforms = None
         # 正确（transforms 与 dataset 同级）
