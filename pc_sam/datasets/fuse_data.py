@@ -240,7 +240,7 @@ class FuseDatasetVal(Dataset):
         return len(self.mapping_points)
 
 
-# 在pc_sam/datasets/fuse_data.py末尾添加
+
 import os
 import numpy as np
 from torch.utils.data import Dataset
@@ -252,23 +252,31 @@ class CustomNPDDataset(Dataset):
         self.split = split
         self.transform = transform
         self.num_points = num_points
+        self.merged_dir = os.path.join(data_root, "merged")  # merged文件夹路径
 
         # 读取split对应的txt文件（train/val/test.txt）
         split_file = os.path.join(data_root, f"{split}_scenes.txt")
         with open(split_file, "r") as f:
             self.scene_names = [line.strip() for line in f.readlines()]
 
-        # 检查文件是否存在
+        # 检查merged文件夹是否存在
+        if not os.path.exists(self.merged_dir):
+            raise FileNotFoundError(f"merged文件夹不存在: {self.merged_dir}")
+
+        # 检查所有场景文件是否存在
         for name in self.scene_names:
-            if not os.path.exists(os.path.join(data_root, f"{name}.npy")):
-                raise FileNotFoundError(f"Missing {name}.npy in {data_root}")
+            scene_path = os.path.join(self.merged_dir, f"{name}.npy")
+            if not os.path.exists(scene_path):
+                raise FileNotFoundError(f"场景文件不存在: {scene_path}")
 
     def __len__(self):
         return len(self.scene_names)
 
     def __getitem__(self, idx):
-        # 加载.npy文件（10通道：xyz, rgb, normal, label）
-        scene_data = np.load(os.path.join(self.data_root, f"{self.scene_names[idx]}.npy"))
+        # 从merged文件夹加载.npy文件（10通道：xyz, rgb, normal, label）
+        scene_name = self.scene_names[idx]
+        scene_path = os.path.join(self.merged_dir, f"{scene_name}.npy")
+        scene_data = np.load(scene_path)
 
         # 解析通道
         xyz = scene_data[:, :3].astype(np.float32)  # 坐标 (N, 3)
@@ -276,7 +284,7 @@ class CustomNPDDataset(Dataset):
         normal = scene_data[:, 6:9].astype(np.float32)  # 法向量 (N, 3)
         labels = scene_data[:, 9].astype(np.int32)  # 标签 (N,)
 
-        # 关键修改：拼接RGB和法向量为6通道特征
+        # 拼接RGB和法向量为6通道特征
         features = np.concatenate([rgb, normal], axis=1).astype(np.float32)  # (N, 6)
 
         # 转换标签为掩码（gt_masks: [M, N]，M为实例数）
@@ -286,7 +294,7 @@ class CustomNPDDataset(Dataset):
         for i, label in enumerate(unique_labels):
             gt_masks[i] = (labels == label)
 
-        # 组织数据，不单独保留normals字段
+        # 组织数据
         data = {
             "coords": xyz,
             "features": features,  # 6通道特征：RGB(3) + 法向量(3)
@@ -297,4 +305,3 @@ class CustomNPDDataset(Dataset):
         if self.transform is not None:
             data = self.transform(data)
         return data
-
