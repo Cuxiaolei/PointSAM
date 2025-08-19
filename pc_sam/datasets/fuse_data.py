@@ -255,48 +255,94 @@ class CustomNPDDataset(Dataset):
 
         # 读取split对应的txt文件（train/val/test.txt）
         split_file = os.path.join(data_root, f"{split}_scenes.txt")
+        # 调试：检查split文件是否存在
+        assert os.path.exists(split_file), f"split文件不存在：{split_file}"
+        print(f"成功加载split文件：{split_file}，包含{len(self.scene_names)}个场景")
+
         with open(split_file, "r") as f:
             self.scene_names = [line.strip() for line in f.readlines()]
 
-        # 检查文件是否存在
-        for name in self.scene_names:
-            if not os.path.exists(os.path.join(data_root, f"{name}")):
-                raise FileNotFoundError(f"Missing {name} in {data_root}")
+        # 检查场景文件是否存在，并打印基本信息
+        print(f"开始检查{split}集场景文件（共{len(self.scene_names)}个）：")
+        for i, name in enumerate(self.scene_names):
+            scene_path = os.path.join(data_root, f"{name}")
+            # 检查文件是否存在（支持带或不带.npy后缀的文件）
+            if not os.path.exists(scene_path):
+                scene_path += ".npy"  # 尝试添加.npy后缀
+            assert os.path.exists(scene_path), f"场景文件不存在：{scene_path}"
+            if i < 3:  # 只打印前3个场景的路径（避免日志过多）
+                print(f"  场景{i + 1}：{scene_path}")
 
     def __len__(self):
         return len(self.scene_names)
 
     def __getitem__(self, idx):
-        # 加载.npy文件（10通道：xyz, rgb, normal, label）
-        scene_data = np.load(os.path.join(self.data_root, f"{self.scene_names[idx]}"))
+        # 加载.npy文件（处理带或不带.npy后缀的情况）
+        scene_name = self.scene_names[idx]
+        scene_path = os.path.join(self.data_root, scene_name)
+        if not os.path.exists(scene_path):
+            scene_path += ".npy"  # 自动补充.npy后缀
+        # 调试：打印当前加载的文件路径
+        print(f"\n加载第{idx}个场景：{scene_path}")
 
-        # 解析通道
+        # 加载原始数据并检查形状
+        try:
+            scene_data = np.load(scene_path)
+        except Exception as e:
+            raise RuntimeError(f"加载场景{scene_path}失败：{e}")
+
+        # 调试：检查原始数据形状（必须是2维，且通道数为10）
+        assert scene_data.ndim == 2, f"原始数据不是2维数组，实际形状：{scene_data.shape}"
+        assert scene_data.shape[1] == 10, f"原始数据通道数错误（应为10），实际：{scene_data.shape[1]}"
+        print(f"原始数据形状：{scene_data.shape}（N={scene_data.shape[0]}个点，10通道）")
+
+        # 解析通道并检查形状
         xyz = scene_data[:, :3].astype(np.float32)  # 坐标 (N, 3)
         rgb = scene_data[:, 3:6].astype(np.float32)  # 颜色 (N, 3)
         normal = scene_data[:, 6:9].astype(np.float32)  # 法向量 (N, 3)
         labels = scene_data[:, 9].astype(np.int32)  # 标签 (N,)
 
-        # 关键修改：拼接RGB和法向量为6通道特征
-        features = np.concatenate([rgb, normal], axis=1).astype(np.float32)  # (N, 6)
+        # 调试：检查各通道形状
+        assert xyz.ndim == 2 and xyz.shape[1] == 3, f"坐标形状错误：{xyz.shape}（预期(N,3)）"
+        assert rgb.ndim == 2 and rgb.shape[1] == 3, f"RGB形状错误：{rgb.shape}（预期(N,3)）"
+        assert normal.ndim == 2 and normal.shape[1] == 3, f"法向量形状错误：{normal.shape}（预期(N,3)）"
+        assert labels.ndim == 1 and len(labels) == xyz.shape[0], f"标签形状错误：{labels.shape}（预期(N,)）"
+        print(f"解析后：坐标{xyz.shape}，RGB{rgb.shape}，法向量{normal.shape}，标签{labels.shape}")
 
-        # 转换标签为掩码（gt_masks: [M, N]，M为实例数）
+        # 拼接6通道特征
+        features = np.concatenate([rgb, normal], axis=1).astype(np.float32)
+        assert features.shape == (xyz.shape[0], 6), f"特征拼接错误：{features.shape}（预期(N,6)）"
+
+        # 转换标签为掩码（gt_masks）
         unique_labels = np.unique(labels)
         unique_labels = unique_labels[unique_labels != -1]  # 排除无效标签
         gt_masks = np.zeros((len(unique_labels), xyz.shape[0]), dtype=bool)
         for i, label in enumerate(unique_labels):
             gt_masks[i] = (labels == label)
 
-        # 组织数据，不单独保留normals字段
+        # 调试：检查掩码形状
+        assert gt_masks.ndim == 2, f"掩码不是2维数组：{gt_masks.shape}"
+        assert gt_masks.shape[1] == xyz.shape[0], f"掩码点数不匹配：{gt_masks.shape[1]} vs {xyz.shape[0]}"
+        print(f"掩码形状：{gt_masks.shape}（{len(unique_labels)}个实例，{xyz.shape[0]}个点）")
+
+        # 组织数据
         data = {
             "coords": xyz,
-            "features": features,  # 6通道特征：RGB(3) + 法向量(3)
+            "features": features,
             "gt_masks": gt_masks
         }
 
-        # 应用变换
+        # 应用变换并检查结果
         if self.transform is not None:
+            print("开始应用变换...")
             data = self.transform(data)
-        # 调试：验证采样后点数量是否正确
+            # 变换后再次检查坐标形状（确保采样后仍为(N,3)）
+            assert data["coords"].ndim == 2 and data["coords"].shape[1] == 3, \
+                f"变换后坐标形状错误：{data['coords'].shape}（预期(N,3)）"
+            print(f"变换后：坐标{data['coords'].shape}，特征{data['features'].shape}，掩码{data['gt_masks'].shape}")
+
+        # 验证采样后点数量
         assert len(data["coords"]) == self.num_points, \
             f"采样后点数量错误：预期{self.num_points}，实际{len(data['coords'])}"
+        print(f"数据加载完成（第{idx}个场景）")
         return data
