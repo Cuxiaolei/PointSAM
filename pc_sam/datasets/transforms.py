@@ -70,7 +70,23 @@ def normalize_points(points: np.ndarray):
 
 class NormalizePoints(Transform):
     def apply(self, example):
-        example["coords"] = normalize_points(np.array(example["coords"]))
+        # 保存原始coords用于调试
+        original_coords = example["coords"]
+        original_array = np.array(original_coords)
+
+        # 检查进入NormalizePoints时的形状
+        if original_array.ndim != 2 or original_array.shape[1] != 3:
+            raise RuntimeError(
+                f"NormalizePoints接收的coords形状错误：{original_array.shape}\n"
+                f"原始数据：{original_array}（前5个点）"
+            )
+
+        # 执行归一化
+        try:
+            example["coords"] = normalize_points(original_array)
+        except Exception as e:
+            raise RuntimeError(f"归一化失败：{e}") from e
+
         return example
 
 
