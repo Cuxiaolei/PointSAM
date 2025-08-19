@@ -48,26 +48,27 @@ from hydra.utils import instantiate
 from torchvision.transforms import Compose
 from pc_sam.datasets.fuse_data import CustomNPDDataset  # 根据实际路径调整导入
 
+
 def build_datasets(cfg):
+    # 获取全局配置（包含num_samples等根目录参数）
+    global_cfg = GlobalHydra.instance().config
+
     if cfg.dataset.name == "CustomNPY":
-        # 解析配置中的transforms并组合为可调用对象
+        # 解析transforms
         transforms = None
         if hasattr(cfg.dataset, "transforms") and cfg.dataset.transforms is not None:
-            # 实例化每个变换（如NormalizePoints、RandomSample等）
             transform_list = [instantiate(t) for t in cfg.dataset.transforms]
-            # 组合多个变换为一个Compose对象
             transforms = Compose(transform_list)
 
-        # 加载自定义数据集并传入变换
         return CustomNPDDataset(
             data_root=cfg.dataset.path,
             split=cfg.dataset.split,
             transform=transforms,
-            num_points=cfg.num_samples  # 从全局配置获取采样点数（对应${num_samples}）
+            # 从全局配置获取num_samples（关键修改）
+            num_points=global_cfg.num_samples
         )
     else:
         return build_dataset(cfg)
-
 
 # NOTE: We separately instantiate each component for fine-grained control.
 def main():
