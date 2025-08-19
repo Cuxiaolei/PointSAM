@@ -58,8 +58,11 @@ def build_datasets(cfg):
         transforms = None
         # 正确（transforms 与 dataset 同级）
         if hasattr(cfg, "transforms") and cfg.transforms is not None:
-            transform_list = [instantiate(t) for t in cfg.transforms]
+            # 直接使用已实例化的变换列表，组合成Compose
+            transform_list = cfg.transforms  # 关键：不再调用instantiate
             transforms = Compose(transform_list)
+            print(f"已使用已实例化的变换链：{[t.__class__.__name__ for t in transform_list]}")
+
         random_sample_transform = cfg.transforms[2]
         num_samples = random_sample_transform.num_samples
         return CustomNPDDataset(
