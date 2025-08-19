@@ -148,7 +148,7 @@ def main():
 
     if cfg.val_freq > 0:
         val_dataset_cfg = hydra.utils.instantiate(cfg.val_dataset)
-        val_dataset = build_dataset(val_dataset_cfg)
+        val_dataset = build_datasets(val_dataset_cfg)
         val_dataloader = DataLoader(
             val_dataset, **cfg.val_dataloader, worker_init_fn=worker_init_fn
         )
