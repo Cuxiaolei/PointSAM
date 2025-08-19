@@ -18,7 +18,7 @@ transforms = Compose([
     RandomSample(num_samples=10000),
     ToTensor()
 ])
-data = {"coords": xyz, "features": ..., "gt_masks": ...}  # 构造完整数据
+data = {"coords": xyz}  # 构造完整数据
 try:
     data = transforms(data)
     print(f"变换后坐标形状：{data['coords'].shape}")  # 预期(10000,3)
