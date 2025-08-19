@@ -62,7 +62,7 @@ def build_datasets(cfg):
             split=cfg.dataset.split,
             transform=transforms,
             # 从全局配置获取num_samples（关键修改）
-            num_points=cfg.transforms.num_samples
+            num_points=cfg.transforms[num_samples]
         )
     else:
         return build_dataset(cfg)
