@@ -52,7 +52,7 @@ from pc_sam.datasets.fuse_data import CustomNPDDataset  # 根据实际路径调�
 def build_datasets(cfg):
     # 获取全局配置（包含num_samples等根目录参数）
     global_cfg = GlobalHydra.instance().config
-
+#
     if cfg.dataset.name == "CustomNPY":
         # 解析transforms
         transforms = None
