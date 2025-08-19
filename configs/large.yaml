@@ -9,8 +9,8 @@ num_samples: 10000
 
 # For 24GB GPU
 train_dataloader:
-  batch_size: 2
-  num_workers: 8
+  batch_size: 1
+  num_workers: 4
   shuffle: True
   drop_last: True
 
