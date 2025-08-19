@@ -105,16 +105,30 @@ class RandomSample(Transform):
         features = np.asarray(example["features"])  # 6通道特征
         gt_masks = np.array(example["gt_masks"])  # [M, N]
 
+        # 日志：采样前的点数量
+        import logging
+        logging.info(f"采样前点数量: {len(coords)}")
+
         indices = np.random.choice(len(coords), self.num_samples, replace=self.replace)
         # 如果没有前景，重新采样
+        # 检查是否有前景，无前景则重新采样
         if not (gt_masks[:, indices] == 1).any():
             fg_indices = np.nonzero((gt_masks == 1).any(axis=0))[0]
             bg_indices = np.nonzero((gt_masks == 0).all(axis=0))[0]
-            n_fg = int(np.ceil(self.num_samples / len(coords) * len(fg_indices)))
-            n_fg = min(n_fg, min(len(fg_indices), self.num_samples))
-            fg_indices = np.random.choice(fg_indices, n_fg)
-            bg_indices = np.random.choice(bg_indices, self.num_samples - n_fg)
-            indices = np.random.permutation(np.concatenate([fg_indices, bg_indices]))
+
+            # 处理无前景的极端情况
+            if len(fg_indices) == 0:
+                # 日志：无前景时强制使用背景采样
+                # logging.warning("无前景点，仅使用背景采样")
+                indices = np.random.choice(bg_indices, self.num_samples, replace=True)
+            else:
+                # 平衡前景和背景
+                n_fg = min(int(np.ceil(self.num_samples * 0.2)), len(fg_indices))  # 至少20%前景
+                n_fg = min(n_fg, self.num_samples)  # 避免超过总数量
+                n_bg = self.num_samples - n_fg
+                fg_indices = np.random.choice(fg_indices, n_fg, replace=False)
+                bg_indices = np.random.choice(bg_indices, n_bg, replace=len(bg_indices) < n_bg)
+                indices = np.random.permutation(np.concatenate([fg_indices, bg_indices]))
 
         # 对坐标和6通道特征同时采样
         example["coords"] = coords[indices]
@@ -126,7 +140,8 @@ class RandomSample(Transform):
         if is_empty_mask.any():
             gt_masks[is_empty_mask] = gt_masks[~is_empty_mask][0]
         example["gt_masks"] = gt_masks
-
+        # 日志：采样后点数量
+        logging.info(f"采样后点数量: {len(example['coords'])}")
         return example
 
 
