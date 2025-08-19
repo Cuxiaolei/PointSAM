@@ -133,7 +133,7 @@ std::vector<at::Tensor> mlp_backward(
 
     auto work_size =
         get_mlp_bp_workspace_in_bytes<scalar_t>(batch_size, num_layers, output_features.data());
-
+    # 1
     // auto work_space = at::empty({work_size*4}, at::kByte);
     auto work_space = at::empty({static_cast<long>(work_size / sizeof(scalar_t))}, inputs[0].options());
 
