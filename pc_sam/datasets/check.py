@@ -1,5 +1,5 @@
 import numpy as np
-from pc_sam.datasets.transforms import Compose, NormalizePoints, NormalizeColor, RandomSample, ToTensor
+from transforms import Compose, NormalizePoints, NormalizeColor, RandomSample, ToTensor
 
 # 加载异常场景数据
 scene_path = "/root/autodl-tmp/data/data_s3dis_pointNeXt/merged/Area_5.npy"
