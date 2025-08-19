@@ -348,4 +348,4 @@ class CustomNPDDataset(Dataset):
         assert len(data["coords"]) == self.num_points, \
             f"采样后点数量错误：预期{self.num_points}，实际{len(data['coords'])}"
         print(f"数据加载完成（第{idx}个场景）")
-        return dataZ
+        return data
