@@ -9,4 +9,5 @@ transforms:
     mean: 0.5
     std: 0.5
   - _target_: pc_sam.datasets.transforms.RandomSample  # 采样固定数量的点
+    num_samples: ${num_samples}  # 复用全局参数num_samples（如10000）
   - _target_: pc_sam.datasets.transforms.ToTensor  # 转换为Tensor
