@@ -53,8 +53,9 @@ def build_datasets(cfg):
     if cfg.dataset.name == "CustomNPY":
         # 解析transforms
         transforms = None
-        if hasattr(cfg.dataset, "transforms") and cfg.dataset.transforms is not None:
-            transform_list = [instantiate(t) for t in cfg.dataset.transforms]
+        # 正确（transforms 与 dataset 同级）
+        if hasattr(cfg, "transforms") and cfg.transforms is not None:
+            transform_list = [instantiate(t) for t in cfg.transforms]
             transforms = Compose(transform_list)
         random_sample_transform = cfg.transforms[2]
         num_samples = random_sample_transform.num_samples
