@@ -1,6 +1,6 @@
 dataset:
   name: CustomNPY  # 需与 `build_dataloader` 中的判断条件 `cfg.dataset == "CustomNPY"` 一致
-  datapath: "/root/autodl-tmp/data/data_s3dis_pointNeXt"  # 数据根目录
+  path: "/root/autodl-tmp/data/data_s3dis_pointNeXt"  # 数据根目录
   split: "val"
   keep_in_memory: False  # 根据内存情况调整，大数据集建议设为False
 # 验证集预处理（与训练集保持一致或简化，避免数据增强）
