@@ -288,13 +288,17 @@ def main():
     # 恢复状态
     ckpt_dir = Path(accelerator.project_dir, "checkpoints")
     if ckpt_dir.exists():
-        accelerator.load_state()
-        global_step = scheduler.scheduler.last_epoch // accelerator.state.num_processes
-        get_epoch_fn = lambda x: int(x.name.split("_")[-1])
-        last_ckpt_dir = sorted(ckpt_dir.glob("checkpoint_*"), key=get_epoch_fn)[-1]
-        start_epoch = get_epoch_fn(last_ckpt_dir) + 1
-        accelerator.project_configuration.iteration = start_epoch
-
+        # 允许加载OmegaConf的ListConfig类型
+        with torch.serialization.safe_globals([ListConfig]):
+            try:
+                accelerator.load_state()
+                global_step = scheduler.scheduler.last_epoch // accelerator.state.num_processes
+                get_epoch_fn = lambda x: int(x.name.split("_")[-1])
+                last_ckpt_dir = sorted(ckpt_dir.glob("checkpoint_*"), key=get_epoch_fn)[-1]
+                start_epoch = get_epoch_fn(last_ckpt_dir) + 1
+                accelerator.project_configuration.iteration = start_epoch
+            except Exception as e:
+                print(f"检查点加载失败，将从头开始训练: {str(e)}")
     for epoch in range(start_epoch, cfg.max_epochs):
         model.train()
         pbar = tqdm(total=len(train_dataloader), desc=f"Epoch {epoch + 1}/{cfg.max_epochs}")
