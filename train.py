@@ -188,7 +188,7 @@ def main():
     accelerator = Accelerator(
         project_config=project_config,
         kwargs_handlers=[ddp_kwargs],
-        log_with=cfg.log_with,  # 会根据配置自动关闭wandb
+        log_with=cfg.log_with if cfg.log_with else None,  # 关键修改：空值时设为None
     )
     model, optimizer, train_dataloader, scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, scheduler
