@@ -125,7 +125,7 @@ class RandomSample(Transform):
 
         # 日志：采样前的点数量
         import logging
-        logging.info(f"采样前点数量: {len(coords)}")
+        # logging.info(f"采样前点数量: {len(coords)}")
 
         indices = np.random.choice(len(coords), self.num_samples, replace=self.replace)
         # 如果没有前景，重新采样
@@ -159,7 +159,7 @@ class RandomSample(Transform):
             gt_masks[is_empty_mask] = gt_masks[~is_empty_mask][0]
         example["gt_masks"] = gt_masks
         # 日志：采样后点数量
-        logging.info(f"采样后点数量: {len(example['coords'])}")
+        # logging.info(f"采样后点数量: {len(example['coords'])}")
         return example
 
 
