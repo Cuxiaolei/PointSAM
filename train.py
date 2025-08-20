@@ -198,6 +198,13 @@ def main():
 
     accelerator.print(OmegaConf.to_yaml(cfg))
 
+    if cfg.log_with == "":
+        accelerator.init_trackers(
+            project_name=cfg.get("project_name", "pointcloud-sam"),
+            config=hparams,
+            init_kwargs={"log": {"name": cfg.run_name}},
+        )
+
     # 初始化本地日志
     log_dir = os.path.join(cfg.project_dir, "metrics")
     os.makedirs(log_dir, exist_ok=True)
@@ -206,7 +213,7 @@ def main():
     print(f"日志文件将保存至: {log_dir}")
 
     # 移除wandb相关初始化代码
-    if cfg.log_with:
+    if cfg.log_with == "":
         accelerator.print(f"已禁用wandb，使用本地日志记录")
     else:
         print(f"没有禁用wandb，cfg.log_with为{cfg.log_with}")
