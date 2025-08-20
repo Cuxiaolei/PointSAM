@@ -41,4 +41,5 @@ max_steps: 5000000
 # Logging
 run_name: default_partnet+scannet_block
 project_dir: "./logs/${run_name}"
-log_with: wandb
+log_with: ""
+log_dir: "./logs/${run_name}/metrics"
