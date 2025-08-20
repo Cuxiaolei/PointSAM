@@ -188,7 +188,7 @@ def main():
     accelerator = Accelerator(
         project_config=project_config,
         kwargs_handlers=[ddp_kwargs],
-        log_with=cfg.log_with if cfg.log_with else [],
+        log_with=[],
     )
     model, optimizer, train_dataloader, scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, scheduler
@@ -208,7 +208,8 @@ def main():
     # 移除wandb相关初始化代码
     if cfg.log_with:
         accelerator.print(f"已禁用wandb，使用本地日志记录")
-
+    else:
+        print(f"没有禁用wandb，cfg.log_with为{cfg.log_with}")
     # Define validation function
     @torch.no_grad()
     def validate(current_epoch, current_step):

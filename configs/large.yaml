@@ -41,5 +41,5 @@ max_steps: 5000000
 # Logging
 run_name: large_default
 project_dir: "./logs/${run_name}"
-log_with: None
+log_with: ""
 log_dir: "./logs/${run_name}/metrics"
