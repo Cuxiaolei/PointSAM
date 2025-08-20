@@ -26,7 +26,8 @@ from pc_sam.utils.torch_utils import replace_with_fused_layernorm, worker_init_f
 from hydra.utils import instantiate
 from torchvision.transforms import Compose
 from pc_sam.datasets.fuse_data import CustomNPDDataset  # 根据实际路径调整导入
-
+import omegaconf
+from omegaconf.listconfig import ListConfig
 
 def build_dataset(cfg):
     if os.path.exists(cfg.dataset.path):
