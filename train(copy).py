@@ -77,7 +77,6 @@ def build_datasets(cfg):
         return build_dataset(cfg)
 
 # NOTE: We separately instantiate each component for fine-grained control.
-# NOTE: We separately instantiate each component for fine-grained control.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -128,16 +127,16 @@ def main():
         for name in pretrained["module"].keys():
             if "point_encoder.encoder2trans" in name:
                 # print(name)
-                suffix = name[len("point_encoder.encoder2trans."):]
+                suffix = name[len("point_encoder.encoder2trans.") :]
                 state_dict[f"patch_proj.{suffix}"] = pretrained["module"][name]
                 # print(name, pretrained["module"][name].shape)
             if "point_encoder.pos_embed" in name:
                 # print(name)
-                suffix = name[len("point_encoder.pos_embed."):]
+                suffix = name[len("point_encoder.pos_embed.") :]
                 state_dict[f"pos_embed.{suffix}"] = pretrained["module"][name]
             if "point_encoder.visual" in name:
                 # print(name)
-                suffix = name[len("point_encoder.visual."):]
+                suffix = name[len("point_encoder.visual.") :]
                 state_dict[f"transformer.{suffix}"] = pretrained["module"][name]
         missing_keys = model.pc_encoder.load_state_dict(state_dict, strict=False)
         print(missing_keys)
@@ -157,7 +156,7 @@ def main():
 
     if cfg.val_freq > 0:
         val_dataset_cfg = hydra.utils.instantiate(cfg.val_dataset)
-        val_dataset = build_dataset(val_dataset_cfg)
+        val_dataset = build_datasets(val_dataset_cfg)
         val_dataloader = DataLoader(
             val_dataset, **cfg.val_dataloader, worker_init_fn=worker_init_fn
         )
@@ -189,7 +188,7 @@ def main():
     accelerator = Accelerator(
         project_config=project_config,
         kwargs_handlers=[ddp_kwargs],
-        log_with=cfg.log_with,
+        log_with=[],
     )
     model, optimizer, train_dataloader, scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, scheduler
@@ -199,39 +198,39 @@ def main():
 
     accelerator.print(OmegaConf.to_yaml(cfg))
 
-    if cfg.log_with:
+    if cfg.log_with == "":
         accelerator.init_trackers(
             project_name=cfg.get("project_name", "pointcloud-sam"),
             config=hparams,
-            init_kwargs={"wandb": {"name": cfg.run_name}},
+            init_kwargs={"log": {"name": cfg.run_name}},
         )
-    if cfg.log_with == "wandb":
-        wandb_tracker = accelerator.get_tracker("wandb")
-        try:
-            file_path = os.path.join(wandb_tracker.run.dir, "full_config.yaml")
-            with open(file_path, "w") as f:
-                f.write(OmegaConf.to_yaml(cfg))
-            wandb_tracker.run.save(file_path)
-        except:
-            pass
 
+    # 初始化本地日志
+    log_dir = os.path.join(cfg.project_dir, "metrics")
+    os.makedirs(log_dir, exist_ok=True)
+    train_log_path = os.path.join(log_dir, "train_metrics.jsonl")
+    val_log_path = os.path.join(log_dir, "val_metrics.jsonl")
+    print(f"日志文件将保存至: {log_dir}")
+
+    # 移除wandb相关初始化代码
+    if cfg.log_with == "":
+        accelerator.print(f"已禁用wandb，使用本地日志记录")
+    else:
+        print(f"没有禁用wandb，cfg.log_with为{cfg.log_with}")
     # Define validation function
+
+
     @torch.no_grad()
-    def validate():
+    def validate(current_epoch, current_step):
         model.eval()
         epoch_ious = defaultdict(list)
-
-        if cfg.log_with == "wandb":
-            pbar = tqdm(total=len(val_dataloader), miniters=10, maxinterval=60)
-        else:
-            pbar = tqdm(total=len(val_dataloader))
+        pbar = tqdm(total=len(val_dataloader), desc=f"Validation Epoch {current_epoch + 1}")
 
         for data in val_dataloader:
             outputs = model(**data, is_eval=True)
             gt_masks = data["gt_masks"].flatten(0, 1)
 
             # Update metrics
-            # for i_iter in [0, len(outputs) - 1]:
             for i_iter in range(len(outputs)):
                 if i_iter == 0:
                     all_masks = outputs[0]["masks"]  # [B*M, C, N]
@@ -254,130 +253,135 @@ def main():
             pbar.update(1)
 
         pbar.close()
+
+        # 打印验证指标
+        print(f"\n===== 验证集指标 (Epoch: {current_epoch + 1}, Step: {current_step}) =====")
+        for key, value in metrics.items():
+            print(f"  {key}: {value:.6f}")
+
+        # 保存验证日志
+        val_log_entry = {
+            "epoch": current_epoch + 1,
+            "global_step": current_step,
+            "timestamp": datetime.now().isoformat(), **metrics
+        }
+        with open(val_log_path, "a") as f:
+            f.write(json.dumps(val_log_entry) + "\n")
+
         return metrics
 
-    # ---------------------------------------------------------------------------- #
-    # Training loop
-    # ---------------------------------------------------------------------------- #
-    step = 0  # Number of batch steps
-    global_step = 0  # Number of optimization steps
-    start_epoch = 0
+        # ---------------------------------------------------------------------------- #
+        # Training loop
+        # ---------------------------------------------------------------------------- #
+        step = 0  # Number of batch steps
+        global_step = 0  # Number of optimization steps
+        start_epoch = 0
 
-    # Restore state
-    ckpt_dir = Path(accelerator.project_dir, "checkpoints")
-    if ckpt_dir.exists():
-        accelerator.load_state()
-        global_step = scheduler.scheduler.last_epoch // accelerator.state.num_processes
-        get_epoch_fn = lambda x: int(x.name.split("_")[-1])
-        last_ckpt_dir = sorted(ckpt_dir.glob("checkpoint_*"), key=get_epoch_fn)[-1]
-        start_epoch = get_epoch_fn(last_ckpt_dir) + 1
-        accelerator.project_configuration.iteration = start_epoch
+        # Restore state
+        ckpt_dir = Path(accelerator.project_dir, "checkpoints")
+        if ckpt_dir.exists():
+            accelerator.load_state()
+            global_step = scheduler.scheduler.last_epoch // accelerator.state.num_processes
+            get_epoch_fn = lambda x: int(x.name.split("_")[-1])
+            last_ckpt_dir = sorted(ckpt_dir.glob("checkpoint_*"), key=get_epoch_fn)[-1]
+            start_epoch = get_epoch_fn(last_ckpt_dir) + 1
+            accelerator.project_configuration.iteration = start_epoch
 
-    for epoch in range(start_epoch, cfg.max_epochs):
-        model.train()
+        for epoch in range(start_epoch, cfg.max_epochs):
+            model.train()
+            print(f"\n===== 开始训练 Epoch {epoch + 1}/{cfg.max_epochs} =====")
+            pbar = tqdm(total=len(train_dataloader), desc=f"Training Epoch {epoch + 1}")
 
-        if cfg.log_with == "wandb":
-            # Since wandb records stdout, decrease the frequency of tqdm updates
-            pbar = tqdm(total=len(train_dataloader), miniters=10, maxinterval=60)
-        else:
-            pbar = tqdm(total=len(train_dataloader))
+            for data in train_dataloader:
+                flag = (step + 1) % cfg.gradient_accumulation_steps == 0
 
-        for data in train_dataloader:
-            flag = (step + 1) % cfg.gradient_accumulation_steps == 0
+                ctx = nullcontext if flag else accelerator.no_sync
+                with ctx(model):
+                    outputs = model(**data)
+                    gt_masks = data["gt_masks"].flatten(0, 1)  # [B*M, N]
+                    loss, aux = criterion(outputs, gt_masks)
+                    accelerator.backward(loss / cfg.gradient_accumulation_steps)
 
-            ctx = nullcontext if flag else accelerator.no_sync
-            # https://huggingface.co/docs/accelerate/en/concept_guides/gradient_synchronization#solving-the-slowdown-problem
-            with ctx(model):
-                # NOTE: `forward` method needs to be implemented for `accelerate` to apply autocast
-                outputs = model(**data)
-                gt_masks = data["gt_masks"].flatten(0, 1)  # [B*M, N]
-                loss, aux = criterion(outputs, gt_masks)
-                accelerator.backward(loss / cfg.gradient_accumulation_steps)
+                if flag:
+                    if cfg.max_grad_value:
+                        nn.utils.clip_grad.clip_grad_value_(
+                            model.parameters(), cfg.max_grad_value
+                        )
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    scheduler.step()
 
-            if flag:
-                if cfg.max_grad_value:
-                    nn.utils.clip_grad.clip_grad_value_(
-                        model.parameters(), cfg.max_grad_value
-                    )
-                optimizer.step()
-                optimizer.zero_grad()
-                scheduler.step()
+                    # Compute metrics
+                    with torch.no_grad():
+                        metrics = dict(loss=loss.item())
+                        for i_iter in [0, len(outputs) - 1]:
+                            pred_masks = aux[i_iter]["best_masks"] > 0
+                            is_correct = pred_masks == gt_masks
+                            acc = is_correct.float().mean()
+                            fg_acc = is_correct[gt_masks == 1].float().mean()
+                            bg_acc = is_correct[gt_masks == 0].float().mean()
+                            metrics[f"acc({i_iter})"] = acc.item()
+                            metrics[f"fg_acc({i_iter})"] = fg_acc.item()
+                            metrics[f"bg_acc({i_iter})"] = bg_acc.item()
 
-                # Compute metrics
-                with torch.no_grad():
-                    metrics = dict(loss=loss.item())
-                    for i_iter in [0, len(outputs) - 1]:
-                        # pred_masks = outputs[i_iter]["prompt_masks"] > 0
-                        pred_masks = aux[i_iter]["best_masks"] > 0
-                        is_correct = pred_masks == gt_masks
-                        acc = is_correct.float().mean()
-                        fg_acc = is_correct[gt_masks == 1].float().mean()
-                        bg_acc = is_correct[gt_masks == 0].float().mean()
-                        metrics[f"acc({i_iter})"] = acc.item()
-                        metrics[f"fg_acc({i_iter})"] = fg_acc.item()
-                        metrics[f"bg_acc({i_iter})"] = bg_acc.item()
+                            iou = aux[i_iter]["iou"].mean()
+                            metrics[f"iou({i_iter})"] = iou.item()
 
-                        iou = aux[i_iter]["iou"].mean()
-                        metrics[f"iou({i_iter})"] = iou.item()
+                            # Loss breakdown
+                            for k, v in aux[i_iter].items():
+                                if k.startswith("loss"):
+                                    metrics[f"{k}({i_iter})"] = v.item()
 
-                        # Loss breakdown
-                        for k, v in aux[i_iter].items():
-                            if k.startswith("loss"):
-                                metrics[f"{k}({i_iter})"] = v.item()
+                    # 打印训练指标
+                    if global_step % 10 == 0:  # 每10步打印一次详细指标
+                        print(f"\n训练步骤 {global_step} 指标:")
+                        for key, value in metrics.items():
+                            print(f"  {key}: {value:.6f}")
 
-                # Logging with tqdm
-                sub_metrics = {
-                    k: v
-                    for k, v in metrics.items()
-                    if k.startswith("acc") or k.startswith("iou")
-                }
-                pbar.set_postfix(sub_metrics)
+                    # 保存训练日志
+                    train_log_entry = {
+                        "epoch": epoch + 1,
+                        "global_step": global_step,
+                        "timestamp": datetime.now().isoformat(), **metrics
+                    }
+                    with open(train_log_path, "a") as f:
+                        f.write(json.dumps(train_log_entry) + "\n")
 
-                # Visualize with wandb
-                if (
-                        cfg.log_with == "wandb"
-                        and (global_step + 1) % (cfg.get("vis_freq", 1000)) == 0
-                ):
-                    pcds = get_wandb_object_3d(
-                        data["coords"],
-                        data["features"],
-                        gt_masks,
-                        [aux[0]["best_masks"] > 0, aux[-1]["best_masks"] > 0],
-                        [outputs[0]["prompt_coords"], outputs[-1]["prompt_coords"]],
-                        [outputs[0]["prompt_labels"], outputs[-1]["prompt_labels"]],
-                    )
-                    metrics["pcd"] = pcds
+                    # 更新进度条
+                    sub_metrics = {
+                        k: v
+                        for k, v in metrics.items()
+                        if k.startswith("acc") or k.startswith("iou") or k == "loss"
+                    }
+                    pbar.set_postfix(sub_metrics)
 
-                if cfg.log_with:
-                    accelerator.log(metrics, step=global_step)
+                    global_step += 1
 
-                global_step += 1
+                pbar.update(1)
+                step += 1
+                if global_step >= cfg.max_steps:
+                    break
 
-            pbar.update(1)
-            step += 1
+            pbar.close()
+            print(f"===== 完成训练 Epoch {epoch + 1} =====")
+
+            # Save state
+            if (epoch + 1) % cfg.get("save_freq", 1) == 0:
+                accelerator.save_state()
+                print(f"已保存模型 checkpoint (Epoch {epoch + 1})")
+
+            # 验证步骤
+            if cfg.val_freq > 0 and (epoch + 1) % cfg.val_freq == 0:
+                torch.cuda.empty_cache()
+                with accelerator.no_sync(model):
+                    metrics = validate(epoch, global_step)
+                torch.cuda.empty_cache()
+
             if global_step >= cfg.max_steps:
                 break
 
-        pbar.close()
-
-        # Save state
-        if (epoch + 1) % cfg.get("save_freq", 1) == 0:
-            accelerator.save_state()
-
-        if cfg.val_freq > 0 and (epoch + 1) % cfg.val_freq == 0:
-            torch.cuda.empty_cache()
-            with accelerator.no_sync(model):
-                metrics = validate()
-            torch.cuda.empty_cache()
-            if cfg.log_with:
-                metrics = {("val/" + k): v for k, v in metrics.items()}
-                accelerator.log(metrics, step=global_step)
-
-        if global_step >= cfg.max_steps:
-            break
-
-    accelerator.end_training()
-
+        print("训练完成!")
+        accelerator.end_training()
 
 @torch.no_grad()
 def get_wandb_object_3d(xyz, rgb, gt_masks, pred_masks, prompt_coords, prompt_labels):
