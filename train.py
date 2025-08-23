@@ -272,17 +272,17 @@ def test(test_dataloader, model, ckpt_path, log_dir):
     for data in test_dataloader:
         outputs = model(**data, is_eval=True)
         gt_masks = data["gt_masks"].flatten(0, 1)
-        gt_labels = masks_to_labels(gt_masks)  # 转换为类别标签
+        gt_labels = masks_to_labels(gt_masks)  # 转换为类别标签（0,1,2）
 
         # 计算各分支的指标
         for i_iter in range(len(outputs)):
             pred_masks = outputs[i_iter]["prompt_masks"]
-            pred_labels = torch.argmax(pred_masks, dim=0)
+            pred_labels = torch.argmax(pred_masks, dim=0)  # 得到预测的类别标签
 
-            # 计算类别指标
+            # 计算3个类别的指标
             class_metrics = classwise_metrics(pred_labels, gt_labels, num_classes=3)
 
-            # 记录每个类别的指标
+            # 记录每个类别的指标（0,1,2三类）
             for c in range(3):
                 test_metrics[f"iou_{c}({i_iter})"].append(class_metrics["iou"][c].item())
                 test_metrics[f"acc_{c}({i_iter})"].append(class_metrics["acc"][c].item())
@@ -314,13 +314,13 @@ def test(test_dataloader, model, ckpt_path, log_dir):
     for key, value in avg_metrics.items():
         print(f"  {key}: {value:.4f}")
 
-    # 保存测试结果到文件
+    # 保存测试结果到CSV文件（包含所有要求的指标）
     test_log_path = os.path.join(log_dir, "test_metrics.csv")
     with open(test_log_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["step", "metric", "value"])
+        writer.writerow(["metric", "value"])
         for k, v in avg_metrics.items():
-            writer.writerow([0, k, v])  # 测试用step=0
+            writer.writerow([k, v])
     print(f"测试结果已保存至: {test_log_path}")
 
     return avg_metrics
