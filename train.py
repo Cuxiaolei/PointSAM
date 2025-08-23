@@ -234,17 +234,24 @@ def test(test_dataloader, model, ckpt_path, log_dir):
         print(f"找到模型文件: {ckpt_file}")
 
         # 加载模型权重（支持safetensors格式）
-        from safetensors.torch import load_file as load_safetensors  # 新增：导入safetensors加载函数
+        from safetensors.torch import load_file as load_safetensors
 
         try:
+            # 修复：将设备名称转换为safetensors支持的格式
+            device = accelerator.device
+            if str(device).startswith("cuda") and ":" not in str(device):
+                safe_device = f"cuda:0"  # 明确指定GPU编号
+            else:
+                safe_device = str(device)
+
             if str(ckpt_file).endswith(".safetensors"):
-                # 使用safetensors加载
-                checkpoint = load_safetensors(ckpt_file, device=accelerator.device)
+                # 使用safetensors加载，传入兼容的设备名称
+                checkpoint = load_safetensors(ckpt_file, device=safe_device)
             else:
                 # 传统bin文件加载
                 checkpoint = torch.load(
                     ckpt_file,
-                    map_location=accelerator.device,
+                    map_location=device,
                     weights_only=False
                 )
         except Exception as e:
