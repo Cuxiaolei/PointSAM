@@ -208,26 +208,49 @@ def test(test_dataloader, model, ckpt_path, log_dir):
     # 加载最佳checkpoint
     if os.path.exists(ckpt_path):
         print(f"加载测试模型: {ckpt_path}")
-        # 查找最新的checkpoint
+        # 查找最新的checkpoint文件（同时支持.bin和.safetensors）
         if os.path.isdir(ckpt_path):
-            ckpt_files = list(Path(ckpt_path).glob("checkpoint_*/pytorch_model.bin"))
+            # 优先查找.safetensors文件，再查找.bin文件
+            ckpt_files = list(Path(ckpt_path).glob("*.safetensors"))
             if not ckpt_files:
-                ckpt_files = list(Path(ckpt_path).glob("pytorch_model.bin"))
-            if ckpt_files:
-                ckpt_file = sorted(ckpt_files, key=lambda x: x.parent.name)[-1]
-            else:
-                raise FileNotFoundError(f"在 {ckpt_path} 中未找到模型文件")
+                ckpt_files = list(Path(ckpt_path).glob("*.bin"))
+
+            if not ckpt_files:
+                # 检查子目录（如checkpoint_19）
+                subdirs = list(Path(ckpt_path).glob("checkpoint_*/"))
+                if subdirs:
+                    for subdir in subdirs:
+                        ckpt_files = list(subdir.glob("*.safetensors")) or list(subdir.glob("*.bin"))
+                        if ckpt_files:
+                            break
+                if not ckpt_files:
+                    raise FileNotFoundError(f"在 {ckpt_path} 中未找到模型文件（.safetensors或.bin）")
+
+            # 选择最新的文件
+            ckpt_file = sorted(ckpt_files, key=lambda x: x.stat().st_mtime)[-1]
         else:
             ckpt_file = ckpt_path
 
-        # 解决PyTorch 2.6+的安全限制问题
-        checkpoint = torch.load(
-            ckpt_file,
-            map_location=accelerator.device,
-            weights_only=False  # 临时允许完整加载以解决元数据问题
-        )
+        print(f"找到模型文件: {ckpt_file}")
 
-        # 加载模型权重
+        # 加载模型权重（支持safetensors格式）
+        from safetensors.torch import load_file as load_safetensors  # 新增：导入safetensors加载函数
+
+        try:
+            if str(ckpt_file).endswith(".safetensors"):
+                # 使用safetensors加载
+                checkpoint = load_safetensors(ckpt_file, device=accelerator.device)
+            else:
+                # 传统bin文件加载
+                checkpoint = torch.load(
+                    ckpt_file,
+                    map_location=accelerator.device,
+                    weights_only=False
+                )
+        except Exception as e:
+            raise RuntimeError(f"加载模型文件失败: {str(e)}")
+
+        # 加载模型权重（处理可能的嵌套结构）
         if "model" in checkpoint:
             model.load_state_dict(checkpoint["model"])
         else:
