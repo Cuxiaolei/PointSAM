@@ -52,6 +52,65 @@ def build_dataset(cfg):
     return dataset
 
 
+def classwise_metrics(pred_masks: torch.Tensor, gt_labels: torch.Tensor, num_classes: int = 3):
+    """
+    计算每个类别的IoU、准确率、整体准确率（OA）和平均IoU（mIoU）
+    Args:
+        pred_masks: 预测的类别掩码，形状 [N]（每个点的预测类别，0/1/2）
+        gt_labels: 真实类别标签，形状 [N]（每个点的真实类别，0/1/2）
+        num_classes: 类别数（根据实际数据集调整）
+    Returns:
+        字典包含：
+        - iou: 每个类别的IoU，形状 [num_classes]
+        - acc: 每个类别的准确率，形状 [num_classes]
+        - oa: 整体准确率
+        - miou: 平均IoU（所有类别IoU的均值）
+    """
+    iou = torch.zeros(num_classes, device=pred_masks.device)
+    acc = torch.zeros(num_classes, device=pred_masks.device)
+    total_correct = 0
+    total = 0
+
+    for c in range(num_classes):
+        # 计算当前类别的TP、FP、FN
+        pred_c = (pred_masks == c)
+        gt_c = (gt_labels == c)
+
+        tp = (pred_c & gt_c).sum().float()
+        fp = (pred_c & ~gt_c).sum().float()
+        fn = (~pred_c & gt_c).sum().float()
+        total_c = gt_c.sum().float()
+
+        # 计算IoU（避免除以0）
+        iou_denominator = tp + fp + fn
+        iou[c] = tp / iou_denominator if iou_denominator > 0 else 0.0
+
+        # 计算类别准确率
+        acc[c] = tp / total_c if total_c > 0 else 0.0
+
+        # 累计整体指标
+        total_correct += tp
+        total += total_c
+
+    # 计算整体准确率（OA）和平均IoU（mIoU）
+    oa = total_correct / total if total > 0 else 0.0
+    miou = iou.mean().item()  # 所有类别IoU的平均值
+
+    return {
+        "iou": iou,
+        "acc": acc,
+        "oa": oa,
+        "miou": miou
+    }
+
+def masks_to_labels(gt_masks: torch.Tensor) -> torch.Tensor:
+    """将掩码转换为类别标签（每个点属于唯一类别）"""
+    # 输入gt_masks形状为 [M, N]，输出形状为 [N]（0~M-1）
+    labels = torch.argmax(gt_masks.float(), dim=0)
+    return labels
+
+
+
 def build_datasets(cfg):
     if cfg.dataset.name == "CustomNPY":
         print("transforms 配置列表：")
@@ -85,28 +144,40 @@ def save_config(cfg, log_dir):
 
 
 def init_log_files(log_dir):
-    """初始化训练和验证日志CSV文件"""
     os.makedirs(log_dir, exist_ok=True)
 
     train_log_path = os.path.join(log_dir, "train_metrics.csv")
     val_log_path = os.path.join(log_dir, "val_metrics.csv")
 
-    # 初始化训练日志文件
+    # 训练日志表头（包含类别IoU、mIoU等）
     if not os.path.exists(train_log_path):
         with open(train_log_path, "w", newline="") as f:
             writer = csv.writer(f)
-            # 写入表头（根据实际指标调整）
-            writer.writerow(["step", "loss", "acc(0)", "fg_acc(0)", "bg_acc(0)",
-                             "iou(0)", "acc(-1)", "fg_acc(-1)", "bg_acc(-1)", "iou(-1)"])
+            headers = ["step", "loss"]
+            # 为每个输出分支添加指标（假设3个类别）
+            for i_iter in [0, -1]:  # 关注第0个和最后一个分支
+                for c in range(3):
+                    headers.append(f"iou_{c}({i_iter})")  # 类别c的IoU
+                    headers.append(f"acc_{c}({i_iter})")  # 类别c的准确率
+                headers.append(f"oa({i_iter})")          # 整体准确率
+                headers.append(f"miou({i_iter})")        # 平均IoU
+            writer.writerow(headers)
 
-    # 初始化验证日志文件
+    # 验证日志表头
     if not os.path.exists(val_log_path):
         with open(val_log_path, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["step", "iou(best)", "iou(0)", "iou(-1)"])  # 根据实际指标调整
+            headers = ["step"]
+            for i_iter in [0, -1]:
+                for c in range(3):
+                    headers.append(f"iou_{c}({i_iter})")
+                    headers.append(f"acc_{c}({i_iter})")
+                headers.append(f"oa({i_iter})")
+                headers.append(f"miou({i_iter})")
+            headers.append("miou(best)")  # 最佳分支的mIoU
+        writer.writerow(headers)
 
     return train_log_path, val_log_path
-
 
 def log_to_csv(log_path: str, step: int, metrics: Dict[str, Any]):
     """将指标写入CSV文件"""
@@ -240,40 +311,39 @@ def main():
     @torch.no_grad()
     def validate():
         model.eval()
-        epoch_ious = defaultdict(list)
+        epoch_metrics = defaultdict(list)  # 存储所有样本的指标
         pbar = tqdm(total=len(val_dataloader), desc="Validation")
 
         for data in val_dataloader:
             outputs = model(**data, is_eval=True)
-            gt_masks = data["gt_masks"].flatten(0, 1)
+            gt_masks = data["gt_masks"].flatten(0, 1)  # 假设形状 [3, N]
+            gt_labels = masks_to_labels(gt_masks)  # 转换为 [N] 的 0/1/2
 
             for i_iter in range(len(outputs)):
-                if i_iter == 0:
-                    all_masks = outputs[0]["masks"]
-                    all_ious = compute_iou(
-                        all_masks, gt_masks.unsqueeze(1).expand_as(all_masks)
-                    )
-                    best_iou = all_ious.max(dim=1).values
-                    epoch_ious["best"].extend(best_iou.tolist())
-                iou = compute_iou(outputs[i_iter]["prompt_masks"], gt_masks)
-                epoch_ious[i_iter].extend(iou.tolist())
+                # 预测标签（根据模型输出调整）
+                pred_masks = outputs[i_iter]["prompt_masks"]  # 假设 [3, N]
+                pred_labels = torch.argmax(pred_masks, dim=0)  # [N]
 
-            metrics = {
-                f"iou({i_iter})": np.mean(iou) for i_iter, iou in epoch_ious.items()
-            }
-            sub_metrics = {
-                f"iou({i_iter})": metrics[f"iou({i_iter})"]
-                for i_iter in [0, len(outputs) - 1]
-            }
+                # 计算类别指标
+                class_metrics = classwise_metrics(pred_labels, gt_labels, num_classes=3)
+
+                # 记录每个类别的指标
+                for c in range(3):
+                    epoch_metrics[f"iou_{c}({i_iter})"].append(class_metrics["iou"][c].item())
+                    epoch_metrics[f"acc_{c}({i_iter})"].append(class_metrics["acc"][c].item())
+                epoch_metrics[f"oa({i_iter})"].append(class_metrics["oa"].item())
+
+            # 实时更新进度条
+            sub_metrics = {f"iou_0({i_iter})": np.mean(epoch_metrics[f"iou_0({i_iter})"])}  # 示例
             pbar.set_postfix(sub_metrics)
             pbar.update(1)
 
         pbar.close()
 
-        # 计算平均指标并打印
+        # 计算平均指标
         avg_metrics = {}
-        for key, values in epoch_ious.items():
-            avg_metrics[f"iou({key})"] = np.mean(values)
+        for key, values in epoch_metrics.items():
+            avg_metrics[key] = np.mean(values)
 
         print("\n验证结果:")
         for key, value in avg_metrics.items():
@@ -325,22 +395,29 @@ def main():
                 scheduler.step()
 
                 # 计算指标
+                # 训练循环中计算指标的部分（替换原有代码）
                 with torch.no_grad():
                     metrics = dict(loss=loss.item())
+                    # 转换真实掩码为类别标签（[M, N] -> [N]）
+                    gt_labels = masks_to_labels(gt_masks)  # gt_masks是[M, N]的布尔张量
+
                     for i_iter in [0, len(outputs) - 1]:
-                        pred_masks = aux[i_iter]["best_masks"] > 0
-                        is_correct = pred_masks == gt_masks
-                        acc = is_correct.float().mean()
-                        fg_acc = is_correct[gt_masks == 1].float().mean()
-                        bg_acc = is_correct[gt_masks == 0].float().mean()
-                        metrics[f"acc({i_iter})"] = acc.item()
-                        metrics[f"fg_acc({i_iter})"] = fg_acc.item()
-                        metrics[f"bg_acc({i_iter})"] = bg_acc.item()
+                        # 预测掩码转换为类别标签（[M, N] -> [N]）
+                        pred_masks = aux[i_iter]["best_masks"]  # 假设形状为[M, N]
+                        pred_labels = torch.argmax(pred_masks, dim=0)  # [N]的类别标签
 
-                        iou = aux[i_iter]["iou"].mean()
-                        metrics[f"iou({i_iter})"] = iou.item()
+                        # 计算类别指标（包含mIoU）
+                        class_metrics = classwise_metrics(pred_labels, gt_labels, num_classes=3)
 
-                        # 损失分解
+                        # 记录每个类别的IoU和准确率
+                        for c in range(3):
+                            metrics[f"iou_{c}({i_iter})"] = class_metrics["iou"][c].item()
+                            metrics[f"acc_{c}({i_iter})"] = class_metrics["acc"][c].item()
+                        # 记录OA和mIoU
+                        metrics[f"oa({i_iter})"] = class_metrics["oa"].item()
+                        metrics[f"miou({i_iter})"] = class_metrics["miou"]
+
+                        # 保留原有损失分解（如果需要）
                         for k, v in aux[i_iter].items():
                             if k.startswith("loss"):
                                 metrics[f"{k}({i_iter})"] = v.item()
