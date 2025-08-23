@@ -202,6 +202,7 @@ def main():
         "--config", type=str, default="large", help="path to config file"
     )
     parser.add_argument("--config_dir", type=str, default="configs")
+    parser.add_argument("--test", action="store_true", help="是否运行测试模式")  # 新增测试参数
     args, unknown_args = parser.parse_known_args()
 
     # 加载配置
@@ -233,6 +234,18 @@ def main():
     # 初始化模型
     model: PointCloudSAM = hydra.utils.instantiate(cfg.model)
     model.apply(replace_with_fused_layernorm)
+
+    if args.test:
+        test_dataset_cfg = hydra.utils.instantiate(cfg.test_dataset)
+        test_dataset = build_datasets(test_dataset_cfg)
+        test_dataloader = DataLoader(
+            test_dataset, **cfg.test_dataloader, worker_init_fn=worker_init_fn
+        )
+
+        # 初始化加速器（仅用于测试）
+        accelerator = Accelerator()
+        model, test_dataloader = accelerator.prepare(model, test_dataloader)
+
 
     # 加载预训练权重
     if cfg.pretrained_ckpt_path:
@@ -351,6 +364,68 @@ def main():
 
         return avg_metrics
 
+    @torch.no_grad()
+    def test(test_dataloader, model, ckpt_path):
+        """加载训练好的模型进行测试并计算指标"""
+        # 加载最佳 checkpoint
+        if os.path.exists(ckpt_path):
+            print(f"加载测试模型: {ckpt_path}")
+            # 支持加载分布式训练的 checkpoint
+            checkpoint = torch.load(os.path.join(ckpt_path, "pytorch_model.bin"))
+            model.load_state_dict(checkpoint["model"])
+        else:
+            raise FileNotFoundError(f"测试模型路径不存在: {ckpt_path}")
+
+        model.eval()
+        test_ious = defaultdict(list)
+        pbar = tqdm(total=len(test_dataloader), desc="Testing")
+
+        for data in test_dataloader:
+            outputs = model(**data, is_eval=True)
+            gt_masks = data["gt_masks"].flatten(0, 1)
+
+            # 计算各分支的 IoU 和最佳 IoU
+            for i_iter in range(len(outputs)):
+                if i_iter == 0:
+                    all_masks = outputs[0]["masks"]
+                    all_ious = compute_iou(
+                        all_masks, gt_masks.unsqueeze(1).expand_as(all_masks)
+                    )
+                    best_iou = all_ious.max(dim=1).values
+                    test_ious["best"].extend(best_iou.tolist())
+                iou = compute_iou(outputs[i_iter]["prompt_masks"], gt_masks)
+                test_ious[i_iter].extend(iou.tolist())
+
+            # 实时更新进度
+            sub_metrics = {
+                f"iou({i_iter})": np.mean(test_ious[i_iter])
+                for i_iter in [0, len(outputs) - 1]
+            }
+            pbar.set_postfix(sub_metrics)
+            pbar.update(1)
+
+        pbar.close()
+
+        # 计算平均指标
+        avg_metrics = {}
+        for key, values in test_ious.items():
+            avg_metrics[f"iou({key})"] = np.mean(values)
+
+        # 打印并保存测试结果
+        print("\n测试结果:")
+        for key, value in avg_metrics.items():
+            print(f"  {key}: {value:.4f}")
+
+        # 保存测试结果到文件
+        test_log_path = os.path.join(log_dir, "test_metrics.csv")
+        with open(test_log_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["metric", "value"])
+            for k, v in avg_metrics.items():
+                writer.writerow([k, v])
+        print(f"测试结果已保存至: {test_log_path}")
+
+        return avg_metrics
     # 训练循环
     step = 0  # 批次步骤数
     global_step = 0  # 优化步骤数

@@ -1,0 +1,12 @@
+dataset:
+  name: CustomNPY
+  path: "/root/autodl-tmp/data/data_s3dis_pointNeXt"  # 测试数据根目录
+  split: "test"  # 对应测试集的txt文件（test_scenes.txt）
+transforms:
+  - _target_: pc_sam.datasets.transforms.NormalizePoints
+  - _target_: pc_sam.datasets.transforms.NormalizeColor
+    mean: 0.5
+    std: 0.5
+  - _target_: pc_sam.datasets.transforms.RandomSample
+    num_samples: ${num_samples}
+  - _target_: pc_sam.datasets.transforms.ToTensor

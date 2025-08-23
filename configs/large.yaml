@@ -2,6 +2,7 @@ defaults:
   - model: default
   - dataset@train_dataset: custom_train
   - dataset@val_dataset: custom_val
+  - dataset@test_dataset: custom_test  # 新增测试集配置
   - loss: default
 
 # Global variables
@@ -20,6 +21,14 @@ val_dataloader:
   num_workers: 16
   shuffle: False
   drop_last: False
+
+# 新增测试参数
+test_dataloader:
+  batch_size: 16
+  num_workers: 16
+  shuffle: False
+  drop_last: False
+test_ckpt_path: "./logs/large_default/checkpoints"
 
 lr: 3e-4
 weight_decay: 0.1
